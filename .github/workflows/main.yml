@@ -1,4 +1,4 @@
-name: Create VPS (24/7 Auto Restart + Node.js)
+name: Create VPS (Shaban-MD)
 
 on:
   workflow_dispatch:
@@ -8,91 +8,43 @@ on:
 jobs:
   start-vps:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # GitHub Actions limit
+    timeout-minutes: 360
 
     env:
       VPS_NAME: ${{ github.event.client_payload.vps_name || 'manual-vps' }}
-      TMATE_SERVER: nyc1.tmate.io
 
     steps:
-      - name: ⬇️ Checkout repository
+      - name: 📁 Checkout Repo
         uses: actions/checkout@v3
-
-      - name: 📁 Prepare directories
-        run: mkdir -p links .backup
-
-      - name: 💾 Restore backup (optional)
-        run: |
-          name="${VPS_NAME:-manual-vps}"
-          if [ "${{ github.event.client_payload.backup }}" == "true" ]; then
-            unzip ".backup/$name.zip" -d . || echo "⚠️ No backup found."
-          fi
 
       - name: 🔐 Start tmate session
         run: |
-          sudo apt update -y && sudo apt install -y tmate
+          sudo apt update && sudo apt install -y tmate
           tmate -S /tmp/tmate.sock new-session -d
           tmate -S /tmp/tmate.sock wait tmate-ready
           SSH=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
           echo "$SSH" | tee "links/${VPS_NAME:-manual-vps}.txt"
-          WEB=$(tmate -S /tmp/tmate.sock display -p '#{tmate_web}')
-          echo "$WEB" >> "links/${VPS_NAME:-manual-vps}.txt"
 
-      - name: 🚀 Start Playit Tunnel
+      - name: 🚀 Playit Tunnel
         run: |
           wget -q https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64 -O playit
           chmod +x playit
           nohup ./playit > playit.log 2>&1 &
-          echo "✅ Playit started in background."
+          echo "✅ Playit started"
 
-      # ===== Node.js Project Setup =====
-
-      - name: 📦 Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 20.x
-
-      - name: 📥 Install dependencies
-        run: npm install
-
-      - name: 🎞️ Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: 🚀 Start Node app in background
+      - name: 🛠️ Install Required Tools
         run: |
-          nohup npm start > node.log 2>&1 &
-          echo "✅ Node.js app running in background."
+          sudo apt install -y ffmpeg yarn curl zip unzip git nodejs npm
+          sudo npm install -g pm2
 
-      - name: 💾 Optional save_state.sh
-        run: |
-          if [ -f ./save_state.sh ]; then
-            chmod +x ./save_state.sh
-            ./save_state.sh
-          else
-            echo "save_state.sh not found, skipping"
-          fi
-
-      # ===== Backup & Push to Repo =====
-
-      - name: 📦 Save backup
-        run: |
-          name="${VPS_NAME:-manual-vps}"
-          zip -qr ".backup/$name.zip" . -x ".git/*" ".github/*" ".backup/*" || true
-
-      - name: 📤 Push updated files
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "🔁 Updated SSH + backup"
-          file_pattern: 'links/*.txt .backup/*.zip'
-
-      - name: ⏳ Keep alive for 6 hours
+      - name: 💾 Keep VPS Alive
         run: |
           for i in $(seq 1 360); do
             echo "🟢 Minute $i of 360"
             sleep 60
           done
 
-      - name: 🔁 Restart this workflow (24/7)
+      - name: 🔁 Auto Restart Workflow
         if: always()
         run: |
           curl -X POST \
